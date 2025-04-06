@@ -1,6 +1,6 @@
 import csv
 from datamodel import TradingState, Listing, Observation, OrderDepth
-from trade import Trader
+from MA_Crossover import Trader
 
 def load_csv_data(csv_file_path):
     data = []
