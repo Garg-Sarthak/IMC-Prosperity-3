@@ -1,10 +1,11 @@
-from typing import Dict, List
+from typing import Dict, List, Union
 import numpy as np
+import pandas as pd
 import json
 import math
 from datamodel import OrderDepth, TradingState, Order, Trade
 
-from typing import Any
+from typing import Any 
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 
 class Logger:
@@ -119,11 +120,7 @@ class Logger:
             return value
 
         return value[: max_length - 3] + "..."
-
-
 logger = Logger()
-
-
 
 SUBMISSION = "SUBMISSION"
 PRODUCT2 = "KELP" 
@@ -135,7 +132,7 @@ PRODUCTS = [
 ]
 
 DEFAULT_PRICES = {
-    PRODUCT1 : 10_000,
+    PRODUCT1 : 10_000, 
     PRODUCT2 : 2_020,
 }
 
@@ -143,11 +140,12 @@ class Trader:
 
     def __init__(self) -> None:
         
-        logger.print("Initializing Trader...")
+        print("Initializing Trader... ok")
 
         self.position_limit = {
             PRODUCT1 : 50,
             PRODUCT2 : 50,
+            "COCONUTS_EMA": 300
         }
 
         self.round = 0
@@ -168,13 +166,34 @@ class Trader:
 
         self.ema_param = 0.5
 
+        # self.prices : Dict[PRODUCTS, pd.Series] = {
+        #     PINA_COLADAS: pd.Series(),
+        #     COCONUTS: pd.Series(),
+        #     "Spread":pd.Series(),
+        #     DIVING_GEAR:pd.Series(),
+        #     "SPREAD_PICNIC": pd.Series(),
+        # }
+
         self.all_positions = set()
 
+        self.coconuts_pair_position = 0
+        self.last_dolphin_price = -1
+        self.dolphin_signal = 0 # 0 if closed, 1 long, -1 short
+        self.trend = 0
+
+        self.min_time_hold_position = 20 * 100
+        self.initial_time_hold_position = 0
+
+        # Olivia
+        self.olivia_buy_trend = False
+        self.memory_olivia = False
 
     # utils
+    # gets curr position in product
     def get_position(self, product, state : TradingState):
         return state.position.get(product, 0)    
 
+    #get mid price from order depths = (best ask + best bid) / 2
     def get_mid_price(self, product, state : TradingState):
 
         default_price = self.ema_prices[product]
@@ -198,12 +217,14 @@ class Trader:
         best_ask = min(market_asks)
         return (best_bid + best_ask)/2
 
+    #current cash in product
     def get_value_on_product(self, product, state : TradingState):
         """
         Returns the amount of MONEY currently held on the product.  
         """
         return self.get_position(product, state) * self.get_mid_price(product, state)
             
+    #seems useless
     def update_pnl(self, state : TradingState):
         """
         Updates the pnl.
@@ -246,14 +267,74 @@ class Trader:
             else:
                 self.ema_prices[product] = self.ema_param * mid_price + (1-self.ema_param) * self.ema_prices[product]
 
+    
+    # def save_prices(self, state: TradingState):
+    #     price_coconut = self.get_mid_price(COCONUTS, state)
+    #     price_pina_colada = self.get_mid_price(PINA_COLADAS, state)
+
+    #     self.prices[COCONUTS] = pd.concat([
+    #         self.prices[COCONUTS], 
+    #         pd.Series({state.timestamp: price_coconut})
+    #     ])
+
+    #     self.prices[PINA_COLADAS] = pd.concat([
+    #         self.prices[PINA_COLADAS],
+    #         pd.Series({state.timestamp: price_pina_colada})
+    #     ])
+
+    #     self.prices["Spread"] = self.prices[PINA_COLADAS] - 1.551*self.prices[COCONUTS]
+
+    def save_prices_product(
+            self, 
+            product, 
+            state: TradingState,
+            price: Union[float, int, None] = None, 
+        ):
+            if not price:
+                price = self.get_mid_price(product, state)
+
+            self.prices[product] = pd.concat([
+                self.prices[product],
+                pd.Series({state.timestamp: price})
+            ])
+        
+    def update_past_prices(self,state:TradingState) -> None :
+        for product in PRODUCTS:
+            mid_price = self.get_mid_price(product,state)
+            if mid_price is not None :
+                self.past_prices[product].append(mid_price)
+
+    def update_trend(self,state:TradingState,short,long) -> None :
+        prices = self.past_prices[PRODUCT2]
+        if (len(prices) < long):
+            return
+        self.trend = 1 if np.mean(prices[-short:]) > np.mean(prices[-long:]) else 0
+        
+
+    def save_prices_diving_gear(self, state: TradingState):
+        price_diving_gear = self.get_mid_price(DIVING_GEAR, state)
+        self.prices[DIVING_GEAR] = pd.concat([
+            self.prices[DIVING_GEAR],
+            pd.Series({state.timestamp: price_diving_gear})
+        ])
+
+    # def get_dolphins_observations(self, state: TradingState):
+    #     return state.observations[DOLPHIN_SIGHTINGS]
+
+    # Algorithm logic
+    def get_ma_on_product(self,state,product,window):
+        prices = self.past_prices[product]
+        if (len(prices) < window) :
+            return None
+        return prices[-window:]
 
 
-    def pearls_strategy(self, state : TradingState):
+
+
+
+    def pearls_strategy(self, state : TradingState) -> List[Order]:
         """
         Returns a list of orders with trades of PRODUCT1.
-
-        Comment: Mudar depois. Separar estrategia por produto assume que
-        cada produto eh tradado independentemente
         """
 
         position_pearls = self.get_position(PRODUCT1, state)
@@ -267,37 +348,98 @@ class Trader:
 
         return orders
 
+    # def strategy(self,state):
+    #     prices = self.past_prices[PRODUCT2]
+    #     orders = []
+    #     if (len(prices) < 100) : 
+    #         return orders
+    #     trend = 1 if np.mean(prices[-100:]) < np.mean(prices[-50:]) else 0
+
+    #     if self.trend
+        
+
     def bananas_strategy(self, state : TradingState):
         """
         Returns a list of orders with trades of PRODUCT2.
-
-        Comment: Mudar depois. Separar estrategia por produto assume que
-        cada produto eh tradado independentemente
         """
+        orders = []
+        prices = self.past_prices[PRODUCT2]
+        if (len(prices) < 100) : 
+            return orders
+        trend = 1 if np.mean(prices[-100:]) < np.mean(prices[-50:]) else 0
+
+
+        position_bananas = self.get_position(PRODUCT2, state)
+
+        spread = max(state.order_depths[PRODUCT2].buy_orders.keys()) - min(state.order_depths[PRODUCT2].sell_orders.keys())
+
+        bid_volume = self.position_limit[PRODUCT2] - position_bananas
+        ask_volume = - self.position_limit[PRODUCT2] - position_bananas
+
+
+        if position_bananas == 0 and abs(spread) <= 2:
+            # Not long nor short
+            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 1), bid_volume))
+            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 1), ask_volume))
+        
+        if position_bananas > 0 :
+            # Long position
+            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 1), bid_volume))
+            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2]), ask_volume))
+
+        if position_bananas < 0:
+            # Short position
+            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2]), bid_volume))
+            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 1), ask_volume))
+
+        return orders
+    def kelp_strategy(self, state : TradingState):
+        """
+        Returns a list of orders with trades of PRODUCT2.
+        """
+        orders = []
+
 
         position_bananas = self.get_position(PRODUCT2, state)
 
         bid_volume = self.position_limit[PRODUCT2] - position_bananas
         ask_volume = - self.position_limit[PRODUCT2] - position_bananas
 
-        orders = []
 
-        if position_bananas == 0:
-            # Not long nor short
-            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 1), bid_volume))
-            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 1), ask_volume))
+        sell_orders = state.order_depths[PRODUCT2].sell_orders
+        buy_orders = state.order_depths[PRODUCT2].buy_orders
+
+
+        bid = max(buy_orders.keys())
+        ask = min(sell_orders.keys())
+
+        spread = abs(bid-ask)
         
-        if position_bananas > 0:
-            # Long position
-            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 2), bid_volume))
-            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2]), ask_volume))
+        if (max(sell_orders.keys()) > bid) and spread <= 3:
+            orders.append(Order(PRODUCT2,ask,bid_volume))
 
-        if position_bananas < 0:
-            # Short position
-            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2]), bid_volume))
-            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 2), ask_volume))
+        # orders.append(Order(PRODUCT2,bid,bid_volume))
+        # orders.append(Order(PRODUCT2,ask,ask_volume))
 
         return orders
+    # def bananas_strategy(self, state : TradingState) -> List[Order]:
+    #     return orders
+    
+    # def coconuts_pina_coladas_strategy(self, state : TradingState) -> List[List[Order]]:
+    #     return orders_coconuts, orders_pina_coladas
+    
+    # def coconut_strategy(self, state: TradingState):
+    #     return orders
+
+    # def berries_strategy(self, state: TradingState)-> List[Order]:
+    #     return order_berries
+    
+    # def diving_gear_strategy(self, state: TradingState) -> List[Order]:
+    #     return orders_diving_gear
+    
+    # def picnic_strategy(self, state: TradingState)-> List[Order]:
+    #     return orders_baguette, orders_basket, orders_dip, orders_ukulele
+
 
 
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
@@ -308,6 +450,9 @@ class Trader:
         self.round += 1
         pnl = self.update_pnl(state)
         self.update_ema_prices(state)
+        self.update_past_prices(state)
+        long = 30
+        short = 50
 
         logger.print(f"Log round {self.round}")
 
@@ -327,20 +472,66 @@ class Trader:
         result = {}
 
         # PEARL STRATEGY
-        try:
-            result[PRODUCT1] = self.pearls_strategy(state)
-        except Exception as e:
-            logger.print("Error in PRODUCT1 strategy")
-            logger.print(e)
+        # try:
+        #     result[PRODUCT1] = self.pearls_strategy(state)
+        # except Exception as e:
+        #     logger.print("Error in PRODUCT1 strategy")
+        #     logger.print(e)
 
         # BANANA STRATEGY
         try:
-            result[PRODUCT2] = self.bananas_strategy(state)
+            # result[PRODUCT2] = self.bananas_strategy(state)
+            result[PRODUCT2] = self.kelp_strategy(state)
+            '''
+            orders = []
+            prices = self.past_prices[product]
+            position_bananas = self.get_position(PRODUCT2,state)
+            bid_volume = self.position_limit[PRODUCT2] - position_bananas
+            ask_volume = - self.position_limit[PRODUCT2] - position_bananas
+            prev_trend = self.trend
+            curr_trend = 1 if np.mean(prices[-short:]) > np.mean(prices[-long:]) else 0
+            if curr_trend > prev_trend :
+                if position_bananas == 0:
+                    orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 1), bid_volume))
+                    # orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 1), ask_volume))
+                
+                if position_bananas > 0 :
+                    # Long position
+                    orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 1), bid_volume))
+                    # orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2]), ask_volume))
+
+                if position_bananas < 0:
+                    # Short position
+                    orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2]), bid_volume))
+                    # orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 1), ask_volume))
+            elif curr_trend < prev_trend :
+                if position_bananas == 0:
+                    # orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 1), bid_volume))
+                    orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 1), ask_volume))
+                
+                if position_bananas > 0 :
+                    # Long position
+                    # orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 1), bid_volume))
+                    orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2]), ask_volume))
+
+                if position_bananas < 0:
+                    # Short position
+                    # orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2]), bid_volume))
+                    orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 1), ask_volume))
+
+            result[PRODUCT2] = orders    
+            '''
+            
+
+
+
         except Exception as e:
             logger.print("Error in PRODUCT2 strategy")
             logger.print(e)
 
-        logger.print("+---------------------------------+")
+        self.update_trend(state,short,long)
+        logger.print("+---------------------------------+",self.trend)
         logger.flush(state, result, conversions=0, trader_data="SAMPLE")
 
         return result, 0, "SAMPLE"
+        

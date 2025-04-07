@@ -126,18 +126,25 @@ logger = Logger()
 
 
 SUBMISSION = "SUBMISSION"
-PRODUCT2 = "KELP" 
-PRODUCT1 = "RAINFOREST_RESIN"
+RESIN = "RAINFOREST_RESIN"
+KELP = "KELP" 
+# PRODUCT3 = "SQUID"
 
-PRODUCTS = [
-    PRODUCT1,
-    PRODUCT2,
-]
+
+KELP = "KELP"
+RESIN = "RAINFOREST_RESIN"
+SQUID = "SQUID_INK"
 
 DEFAULT_PRICES = {
-    PRODUCT1 : 10_000,
-    PRODUCT2 : 2_020,
+    RESIN : 10000,
+    KELP : 2016,
+    SQUID : 2040
 }
+PRODUCTS = [
+    KELP,
+    RESIN,
+    SQUID
+]
 
 class Trader:
 
@@ -146,8 +153,9 @@ class Trader:
         logger.print("Initializing Trader...")
 
         self.position_limit = {
-            PRODUCT1 : 50,
-            PRODUCT2 : 50,
+            RESIN : 50,
+            KELP : 50,
+            SQUID : 50
         }
 
         self.round = 0
@@ -166,43 +174,20 @@ class Trader:
         for product in PRODUCTS:
             self.ema_prices[product] = None
 
-        self.ema_param = 0.5
+        self.ema_param = 0.2
 
         self.all_positions = set()
 
 
     # utils
-    def get_position(self, product, state : TradingState):
-        return state.position.get(product, 0)    
-
-    def get_mid_price(self, product, state : TradingState):
-
-        default_price = self.ema_prices[product]
-        if default_price is None:
-            default_price = DEFAULT_PRICES[product]
-
-        if product not in state.order_depths:
-            return default_price
-
-        market_bids = state.order_depths[product].buy_orders
-        if len(market_bids) == 0:
-            # There are no bid orders in the market (midprice undefined)
-            return default_price
-        
-        market_asks = state.order_depths[product].sell_orders
-        if len(market_asks) == 0:
-            # There are no bid orders in the market (mid_price undefined)
-            return default_price
-        
-        best_bid = max(market_bids)
-        best_ask = min(market_asks)
-        return (best_bid + best_ask)/2
 
     def get_value_on_product(self, product, state : TradingState):
         """
         Returns the amount of MONEY currently held on the product.  
         """
         return self.get_position(product, state) * self.get_mid_price(product, state)
+    
+
             
     def update_pnl(self, state : TradingState):
         """
@@ -230,6 +215,36 @@ class Trader:
         # Update cash
         update_cash()
         return self.cash + get_value_on_positions()
+    
+
+
+    def get_position(self, product, state : TradingState):
+        return state.position.get(product, 0)    
+
+    def get_mid_price(self, product, state : TradingState):
+
+        default_price = self.ema_prices[product]
+        if default_price is None:
+            default_price = DEFAULT_PRICES[product]
+
+        if product not in state.order_depths:
+            return default_price
+
+        market_bids = state.order_depths[product].buy_orders
+        if len(market_bids) == 0:
+            # There are no bid orders in the market (midprice undefined)
+            return default_price
+        
+        market_asks = state.order_depths[product].sell_orders
+        if len(market_asks) == 0:
+            # There are no bid orders in the market (mid_price undefined)
+            return default_price
+        
+        best_bid = max(market_bids)
+        best_ask = min(market_asks)
+        return (best_bid + best_ask)/2
+
+
 
     def update_ema_prices(self, state : TradingState):
         """
@@ -248,58 +263,126 @@ class Trader:
 
 
 
-    def pearls_strategy(self, state : TradingState):
-        """
-        Returns a list of orders with trades of PRODUCT1.
 
-        Comment: Mudar depois. Separar estrategia por produto assume que
-        cada produto eh tradado independentemente
-        """
 
-        position_pearls = self.get_position(PRODUCT1, state)
-
-        bid_volume = self.position_limit[PRODUCT1] - position_pearls
-        ask_volume = - self.position_limit[PRODUCT1] - position_pearls
-
+    def spread_filling(self, state: TradingState, product):
         orders = []
-        orders.append(Order(PRODUCT1, DEFAULT_PRICES[PRODUCT1] - 1, bid_volume))
-        orders.append(Order(PRODUCT1, DEFAULT_PRICES[PRODUCT1] + 1, ask_volume))
+        position_product = self.get_position(product, state)
+        order_depth = state.order_depths[product]
 
-        return orders
-
-    def bananas_strategy(self, state : TradingState):
-        """
-        Returns a list of orders with trades of PRODUCT2.
-
-        Comment: Mudar depois. Separar estrategia por produto assume que
-        cada produto eh tradado independentemente
-        """
-
-        position_bananas = self.get_position(PRODUCT2, state)
-
-        bid_volume = self.position_limit[PRODUCT2] - position_bananas
-        ask_volume = - self.position_limit[PRODUCT2] - position_bananas
-
-        orders = []
-
-        if position_bananas == 0:
-            # Not long nor short
-            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 1), bid_volume))
-            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 1), ask_volume))
         
-        if position_bananas > 0:
-            # Long position
-            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2] - 2), bid_volume))
-            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2]), ask_volume))
 
-        if position_bananas < 0:
-            # Short position
-            orders.append(Order(PRODUCT2, math.floor(self.ema_prices[PRODUCT2]), bid_volume))
-            orders.append(Order(PRODUCT2, math.ceil(self.ema_prices[PRODUCT2] + 2), ask_volume))
+        # Extract best bid and best ask from the market
+        if order_depth.buy_orders:
+            best_bid = min(order_depth.buy_orders.keys())
+        else:
+            best_bid = None
+
+        if order_depth.sell_orders:
+            best_ask = max(order_depth.sell_orders.keys())
+        else:
+            best_ask = None
+
+        # Use a simple fair price: midpoint of best bid and ask
+
+        # Calculate order volumes based on position
+        bid_volume = self.position_limit[product] - position_product
+        ask_volume = -self.position_limit[product] - position_product
+
+        # Spread capture logic
+        if best_bid is not None and bid_volume > 0:
+            buy_price = best_bid + 1
+            orders.append(Order(product, buy_price, bid_volume))
+
+        if best_ask is not None and ask_volume < 0:
+            sell_price = best_ask - 1
+            orders.append(Order(product, sell_price, ask_volume))
 
         return orders
 
+        
 
+
+
+        
+
+
+    def resin_strategy(self, state: TradingState):
+        """
+        SIDEWAYS
+
+        Resin trading strategy:
+        - Primary: Trade using ₹2 spread around fair price (₹10,000)
+        - Backup: Exit position immediately on volume surge (>4)
+        """
+
+        product = RESIN
+        fair_price = DEFAULT_PRICES[product]
+        spread = 2  # Spread from fair price
+        position = self.get_position(product, state)
+        position_limit = self.position_limit[product]
+
+        market_data = state.order_depths[product]
+        orders = []
+
+        # Best bid/ask and their volumes
+        best_bid = max(market_data.buy_orders.keys(), default=None)
+        best_ask = min(market_data.sell_orders.keys(), default=None)
+        # bid_volume = market_data.buy_orders.get(best_bid, 0)
+        # ask_volume = abs(market_data.sell_orders.get(best_ask, 0))
+
+        # ✅ Primary: Spread trading
+        buy_price = fair_price - spread
+        sell_price = fair_price + spread
+
+        # Calculate how much we can buy/sell without breaching position limit
+        bid_qty = min(position_limit - position, 50)
+        ask_qty = min(position + position_limit, 50)
+
+        if bid_qty > 0:
+            orders.append(Order(product, buy_price, bid_qty))
+        if ask_qty > 0:
+            orders.append(Order(product, sell_price, -ask_qty))
+
+        return orders
+    
+    def kelp_strategy(self, state : TradingState):
+        """
+        Returns a list of orders with trades of KELP.
+
+        """
+
+        position_kelp = self.get_position(KELP, state)
+
+        bid_volume = self.position_limit[KELP] - position_kelp
+        ask_volume = - self.position_limit[KELP] - position_kelp
+
+        orders = []
+
+        if position_kelp == 0:
+            # Not long nor short
+            orders.append(Order(KELP, math.floor(self.ema_prices[KELP] - 1), bid_volume))
+            orders.append(Order(KELP, math.ceil(self.ema_prices[KELP] + 1), ask_volume))
+        
+        if position_kelp > 0:
+            # Long position
+            #why taking 2 
+            orders.append(Order(KELP, math.floor(self.ema_prices[KELP] - 1), bid_volume))
+            orders.append(Order(KELP, math.ceil(self.ema_prices[KELP]), ask_volume))
+
+        if position_kelp < 0:
+            # Short position
+            orders.append(Order(KELP, math.floor(self.ema_prices[KELP]), bid_volume))
+            orders.append(Order(KELP, math.ceil(self.ema_prices[KELP] + 1), ask_volume))
+
+        return orders
+    
+    def kelp_strategy_2(self , state:TradingState):
+        return self.spread_filling(state , KELP)
+    
+    def squid_strategy_2(self , state:TradingState):
+        return self.spread_filling(state , SQUID)
+    
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         """
         Only method required. It takes all buy and sell orders for all symbols as an input,
@@ -326,18 +409,24 @@ class Trader:
         # Initialize the method output dict as an empty dict
         result = {}
 
-        # PEARL STRATEGY
+        #  RESIN STRATEGY
         try:
-            result[PRODUCT1] = self.pearls_strategy(state)
+            result[RESIN] = self.resin_strategy(state)
         except Exception as e:
-            logger.print("Error in PRODUCT1 strategy")
+            logger.print("Error in RESIN strategy")
             logger.print(e)
 
-        # BANANA STRATEGY
+        # KELP STRATEGY
         try:
-            result[PRODUCT2] = self.bananas_strategy(state)
+            result[KELP] = self.kelp_strategy_2(state)
         except Exception as e:
-            logger.print("Error in PRODUCT2 strategy")
+            logger.print("Error in KELP strategy")
+            logger.print(e)
+
+        try:
+            result[SQUID] = self.squid_strategy_2(state)
+        except Exception as e:
+            logger.print("Error in KELP strategy")
             logger.print(e)
 
         logger.print("+---------------------------------+")
