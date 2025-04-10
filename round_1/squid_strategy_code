@@ -1,0 +1,55 @@
+def squid_s(self,state:TradingState, product):
+        position = state.position.get(product,0)
+
+        orders = []
+
+        max_position = 50
+        risk_multiplier = 1 - abs(position)/max_position
+        buy_qty = int((self.position_limit[product] - position)*risk_multiplier)
+        sell_qty = int((-self.position_limit[product] - position)*risk_multiplier)
+
+
+        # market_bids = state.order_depths[product].buy_orders.keys()
+        # market_asks = state.order_depths[product].sell_orders.keys()
+
+        mid_price = self.get_mid_price(product,state)
+        
+        ob = state.order_depths[product]
+        best_bid = max(ob.buy_orders.keys()) if ob.buy_orders else None
+        best_ask = min(ob.sell_orders.keys()) if ob.sell_orders else None
+        if not best_bid or not best_ask: return orders
+
+        price_window = 21
+        long_window = 300
+
+        std = np.std(self.past_prices[product][-price_window:])
+        mn = np.mean(self.past_prices[product][-price_window:])
+
+        volatility = np.std(prices[-30:])
+        short_window = int(np.clip(30 / (volatility*100), 10, 50))
+
+        logger.print(f"mean : {mn}, std : {std}")
+
+        spread = min(ob.sell_orders.keys()) - max(ob.buy_orders.keys())
+        price_adjustment = max(1, int(spread * 0.4))  # Dynamic tick adjustment
+
+        long_ma = np.mean(self.past_prices[product][-long_window:]) if len(self.past_prices[product]) >=long_window else mn
+    
+        if (mid_price >= mn + std) and long_ma < mid_price:
+            order_price = best_ask  # sell
+            orders.append(Order(product, best_bid+price_adjustment, sell_qty))
+            
+        elif (mid_price <= mn - std) and long_ma > mid_price:
+            order_price = best_bid
+            orders.append(Order(product, best_ask-price_adjustment, buy_qty))
+            
+        else:
+            # Post passive orders
+            orders.append(Order(product, best_ask + price_adjustment , sell_qty))  # Improve ask
+            orders.append(Order(product, best_bid - price_adjustment , buy_qty))  # Improve bid
+
+
+        
+        logger.print(orders)
+        return orders
+    

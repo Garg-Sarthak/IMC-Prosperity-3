@@ -1,3 +1,4 @@
+
 from typing import Dict, List
 import numpy as np
 import json
@@ -124,27 +125,22 @@ class Logger:
 logger = Logger()
 
 
-
 SUBMISSION = "SUBMISSION"
-RESIN = "RAINFOREST_RESIN"
-KELP = "KELP" 
-# PRODUCT3 = "SQUID"
-
-
 KELP = "KELP"
 RESIN = "RAINFOREST_RESIN"
 SQUID = "SQUID_INK"
+PRODUCTS = [
+    KELP,
+    RESIN,
+    SQUID
+]
 
 DEFAULT_PRICES = {
     RESIN : 10000,
     KELP : 2016,
     SQUID : 2040
 }
-PRODUCTS = [
-    KELP,
-    RESIN,
-    SQUID
-]
+
 
 class Trader:
 
@@ -174,7 +170,7 @@ class Trader:
         for product in PRODUCTS:
             self.ema_prices[product] = None
 
-        self.ema_param = 0.2
+        self.ema_param = 0.33
 
         self.all_positions = set()
 
@@ -244,8 +240,6 @@ class Trader:
         best_ask = min(market_asks)
         return (best_bid + best_ask)/2
 
-
-
     def update_ema_prices(self, state : TradingState):
         """
         Update the exponential moving average of the prices of each product.
@@ -261,9 +255,13 @@ class Trader:
             else:
                 self.ema_prices[product] = self.ema_param * mid_price + (1-self.ema_param) * self.ema_prices[product]
 
-
-
-
+    def update_past_prices(self,state:TradingState) -> None :
+        for product in PRODUCTS:
+            mid_price = self.get_mid_price(product,state)
+            if mid_price is not None :
+                self.past_prices[product].append(mid_price)
+                self.past_prices[product] = self.past_prices[product][-1000:]
+        return
 
     def spread_filling(self, state: TradingState, product):
         orders = []
@@ -291,98 +289,141 @@ class Trader:
 
         # Spread capture logic
         if best_bid is not None and bid_volume > 0:
-            buy_price = best_bid + 1
-            orders.append(Order(product, buy_price, bid_volume))
+            buy_price = best_bid + 0
+            orders.append(Order(product, buy_price, ask_volume))
 
         if best_ask is not None and ask_volume < 0:
-            sell_price = best_ask - 1
-            orders.append(Order(product, sell_price, ask_volume))
+            sell_price = best_ask - 0
+            orders.append(Order(product, sell_price, bid_volume))
 
         return orders
 
-        
-
-
-
-        
-
-
-    def resin_strategy(self, state: TradingState):
-        """
-        SIDEWAYS
-
-        Resin trading strategy:
-        - Primary: Trade using ₹2 spread around fair price (₹10,000)
-        - Backup: Exit position immediately on volume surge (>4)
-        """
-
-        product = RESIN
-        fair_price = DEFAULT_PRICES[product]
-        spread = 2  # Spread from fair price
-        position = self.get_position(product, state)
-        position_limit = self.position_limit[product]
-
-        market_data = state.order_depths[product]
-        orders = []
-
-        # Best bid/ask and their volumes
-        best_bid = max(market_data.buy_orders.keys(), default=None)
-        best_ask = min(market_data.sell_orders.keys(), default=None)
-        # bid_volume = market_data.buy_orders.get(best_bid, 0)
-        # ask_volume = abs(market_data.sell_orders.get(best_ask, 0))
-
-        # ✅ Primary: Spread trading
-        buy_price = fair_price - spread
-        sell_price = fair_price + spread
-
-        # Calculate how much we can buy/sell without breaching position limit
-        bid_qty = min(position_limit - position, 50)
-        ask_qty = min(position + position_limit, 50)
-
-        if bid_qty > 0:
-            orders.append(Order(product, buy_price, bid_qty))
-        if ask_qty > 0:
-            orders.append(Order(product, sell_price, -ask_qty))
-
-        return orders
-    
-    def kelp_strategy(self, state : TradingState):
-        """
-        Returns a list of orders with trades of KELP.
-
-        """
-
-        position_kelp = self.get_position(KELP, state)
-
-        bid_volume = self.position_limit[KELP] - position_kelp
-        ask_volume = - self.position_limit[KELP] - position_kelp
+    def resin_s(self,state:TradingState, product):
+        position = state.position.get(product,0)
 
         orders = []
 
-        if position_kelp == 0:
-            # Not long nor short
-            orders.append(Order(KELP, math.floor(self.ema_prices[KELP] - 1), bid_volume))
-            orders.append(Order(KELP, math.ceil(self.ema_prices[KELP] + 1), ask_volume))
-        
-        if position_kelp > 0:
-            # Long position
-            #why taking 2 
-            orders.append(Order(KELP, math.floor(self.ema_prices[KELP] - 1), bid_volume))
-            orders.append(Order(KELP, math.ceil(self.ema_prices[KELP]), ask_volume))
+        def_buy = 9997
+        def_sell = 10004
 
-        if position_kelp < 0:
-            # Short position
-            orders.append(Order(KELP, math.floor(self.ema_prices[KELP]), bid_volume))
-            orders.append(Order(KELP, math.ceil(self.ema_prices[KELP] + 1), ask_volume))
+        max_position = 50
+        # risk_multiplier = 1 - abs(position)/max_position
+        risk_multiplier = 1 
+        # risk_multiplier = 1
+        buy_qty = int((self.position_limit[product] - position)*risk_multiplier)
+        sell_qty = int((-self.position_limit[product] - position)*risk_multiplier)
+
+
+        # market_bids = state.order_depths[product].buy_orders.keys()
+        # market_asks = state.order_depths[product].sell_orders.keys()
+
+        mid_price = self.get_mid_price(product,state)
+        
+        ob = state.order_depths[product]
+        best_bid = max(ob.buy_orders.keys()) if ob.buy_orders else None
+        best_ask = min(ob.sell_orders.keys()) if ob.sell_orders else None
+        if not best_bid or not best_ask: return orders
+
+        # residuals = [p for p in self.past_prices[product][-50:]]
+        # std = np.std(residuals)
+        # mn = np.mean(residuals)
+        price_window = 100
+        # long_window = 100
+        spread = best_ask - best_bid
+        # price_adjustment = (int)(spread*mid_price)
+        price_adjustment = 0
+
+        # orders.append(Order(product,def_buy-price_adjustment,buy_qty))
+        # orders.append(Order(product,def_sell+price_adjustment,sell_qty))
+        orders.append(Order(product,mid_price-spread/2,buy_qty))
+        orders.append(Order(product,mid_price+spread/2,sell_qty))
+
+
+        logger.print(orders)
+        return orders
+
+    def squid_s(self,state:TradingState, product):
+        position = state.position.get(product,0)
+
+        orders = []
+
+        buy_qty = self.position_limit[product] - position
+        sell_qty = -self.position_limit[product] - position
+
+
+        market_bids = state.order_depths[product].buy_orders.keys()
+        market_asks = state.order_depths[product].sell_orders.keys()
+
+        mid_price = self.get_mid_price(product,state)
+        
+        best_bid = min(market_bids)
+        best_ask = max(market_asks)
+
+        residuals = [p for p in self.past_prices[product][-50:]]
+        # std = np.std(residuals) if len(residuals) >= 2 else 0
+        # std = np.std([p for p in self.past_prices[product][-50:]])
+        std = np.std(residuals)
+        mn = np.mean(residuals)
+        logger.print(f"mean : {mn}, std : {std}")
+
+        if mid_price >= mn + std:
+            orders.append(Order(product,best_ask-1,sell_qty))
+            logger.print(f"sell at {best_bid} : {sell_qty}")
+        elif mid_price <= mn - std :
+            orders.append(Order(product,best_bid+1,buy_qty))
+            logger.print(f"buy at {best_ask} : {buy_qty}")
+
+
+        
+        # if st is None  or mid_price is None:
+        return orders
+    def squid_s_2(self, state: TradingState, product):
+        position = state.position.get(product, 0)
+        orders = []
+        
+        # 1. Get order book correctly
+        ob = state.order_depths[product]
+        best_bid = max(ob.buy_orders.keys()) if ob.buy_orders else None
+        best_ask = min(ob.sell_orders.keys()) if ob.sell_orders else None
+        if not best_bid or not best_ask: return orders
+        
+        # 2. Calculate fair value and volatility
+        mid_price = (best_bid + best_ask)/2
+        price_window = 50
+        residuals = [p - np.mean(self.past_prices[product][-price_window:]) 
+                    for p in self.past_prices[product][-price_window:]]
+        std = np.std(residuals) if len(residuals) >= 2 else 0
+        mn = np.mean(self.past_prices[product][-price_window:])
+        
+        # 3. Dynamic order placement
+        spread = best_ask - best_bid
+        price_adjustment = max(1, int(spread * 0.2))  # 20% of current spread
+
+        # 4. CORRECT ORDER PRICING LOGIC
+        if mid_price >= mn + std:
+            # SELL: Place below best ask to get priority
+            sell_price = best_ask - price_adjustment
+            sell_qty = min(-1, (-self.position_limit[product] - position))
+            orders.append(Order(product, sell_price, sell_qty))
+            
+        elif mid_price <= mn - std:
+            # BUY: Place above best bid to get priority
+            buy_price = best_bid + price_adjustment
+            buy_qty = max(1, (self.position_limit[product] - position))
+            orders.append(Order(product, buy_price, buy_qty))
+        
+        # 5. Neutral zone market making
+        else:
+            # Improve bid/ask spread
+            orders.append(Order(product, best_bid + 1, buy_qty))  # Better bid
+            orders.append(Order(product, best_ask - 1, sell_qty))  # Better ask
 
         return orders
-    
-    def kelp_strategy_2(self , state:TradingState):
-        return self.spread_filling(state , KELP)
-    
-    def squid_strategy_2(self , state:TradingState):
-        return self.spread_filling(state , SQUID)
-    
+        
+
+
+
+
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         """
         Only method required. It takes all buy and sell orders for all symbols as an input,
@@ -391,6 +432,7 @@ class Trader:
         self.round += 1
         pnl = self.update_pnl(state)
         self.update_ema_prices(state)
+        self.update_past_prices(state)
 
         logger.print(f"Log round {self.round}")
 
@@ -410,23 +452,23 @@ class Trader:
         result = {}
 
         #  RESIN STRATEGY
-        try:
-            result[RESIN] = self.resin_strategy(state)
-        except Exception as e:
-            logger.print("Error in RESIN strategy")
-            logger.print(e)
+        # try:
+        #     result[RESIN] = self.resin_s(state,RESIN)
+        # except Exception as e:
+        #     logger.print("Error in RESIN strategy")
+        #     logger.print(e)
 
-        # KELP STRATEGY
-        try:
-            result[KELP] = self.kelp_strategy_2(state)
-        except Exception as e:
-            logger.print("Error in KELP strategy")
-            logger.print(e)
+        # # KELP STRATEGY
+        # try:
+        #     result[KELP] = self.squid_s(state,KELP)
+        # except Exception as e:
+        #     logger.print("Error in KELP strategy")
+        #     logger.print(e)
 
         try:
-            result[SQUID] = self.squid_strategy_2(state)
+            result[SQUID] = self.squid_s(state,SQUID)
         except Exception as e:
-            logger.print("Error in KELP strategy")
+            logger.print("Error in squid strategy")
             logger.print(e)
 
         logger.print("+---------------------------------+")
