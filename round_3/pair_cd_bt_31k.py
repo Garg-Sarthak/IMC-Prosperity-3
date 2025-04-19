@@ -307,7 +307,7 @@ class Trader:
 
         # spread_value = price_jams - 0.65182388 * price_croissants
         # spread_value = price_jams - 0.65362656 * price_croissants
-        spread_value = price_jams - 1.52990725*price_croissants
+        spread_value = price_jams - 1.52*price_croissants
         self.prices["Spread"] = pd.concat([
             self.prices["Spread"],
             pd.Series({timestamp: spread_value}, dtype=float)
@@ -369,10 +369,10 @@ class Trader:
 
         # - croissants -coconuts
         price_adj = 0
-        threshold = 1.0
+        threshold = 1.75
         ORDER_VOLUME = 10
 
-        if abs(croissants_position) < POSITION_LIMITS[CROISSANTS] - 10:
+        if abs(croissants_position) < POSITION_LIMITS[CROISSANTS] - 250%ORDER_VOLUME :
             if spread_short < avg_spread - threshold*std_spread:
                 orders_croissants.append(Order(CROISSANTS, int_price_croissants-price_adj, -ORDER_VOLUME))
                 orders_jams.append(Order(JAMS, int_price_jams+price_adj, (int)(ORDER_VOLUME*1.4)))
@@ -430,27 +430,29 @@ class Trader:
 
         # - croissants -coconuts
         price_adj = 0
-        threshold = 1.25
+        threshold = 3.75
 
-        ORDER_VOLUME = 16
+        # 250 -> 60
+
+        ORDER_VOLUME = 25
         if abs(croissants_position) < POSITION_LIMITS[CROISSANTS] - 250%ORDER_VOLUME:
         # if croissants_position <= 0:
             if spread_short < avg_spread - threshold*std_spread:
                 orders_croissants.append(Order(CROISSANTS, int_price_croissants-price_adj, -ORDER_VOLUME))
-                orders_jams.append(Order(DJEMBES, int_price_jams+price_adj, int(ORDER_VOLUME//4.16667)))
+                orders_jams.append(Order(DJEMBES, int_price_jams+price_adj, int(6)))
 
             elif spread_short > avg_spread + threshold*std_spread:
                 orders_croissants.append(Order(CROISSANTS, int_price_croissants+price_adj, ORDER_VOLUME))
-                orders_jams.append(Order(DJEMBES, int_price_jams-price_adj, int(-ORDER_VOLUME//4.16667)))
+                orders_jams.append(Order(DJEMBES, int_price_jams-price_adj, int(-6)))
         else :
             if croissants_position > 0:
                 if spread_short < avg_spread - threshold*std_spread:
                     orders_croissants.append(Order(CROISSANTS, int_price_croissants-price_adj, -ORDER_VOLUME))
-                    orders_jams.append(Order(DJEMBES, int_price_jams+price_adj, int(ORDER_VOLUME//4.16667)))
+                    orders_jams.append(Order(DJEMBES, int_price_jams+price_adj, int(6)))
             else :
                 if spread_short > avg_spread + threshold*std_spread:
                     orders_croissants.append(Order(CROISSANTS, int_price_croissants+price_adj, ORDER_VOLUME))
-                    orders_jams.append(Order(DJEMBES, int_price_jams-price_adj, int(-ORDER_VOLUME//4.16667)))
+                    orders_jams.append(Order(DJEMBES, int_price_jams-price_adj, int(-6)))
 
         return orders_croissants, orders_jams
         
@@ -478,8 +480,8 @@ class Trader:
         
         result = {}
         try:
-            # result[CROISSANTS],result[JAMS] = self.pair_strategy(state)
-            result[CROISSANTS],result[DJEMBES] = self.pair_strategy_2(state)
+            result[CROISSANTS],result[JAMS] = self.pair_strategy(state)
+            # result[CROISSANTS],result[DJEMBES] = self.pair_strategy_2(state)
         except Exception as e:
             logger.print("Error in pair strategy")
             logger.print(e)
