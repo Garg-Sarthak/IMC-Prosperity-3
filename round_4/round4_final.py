@@ -1073,9 +1073,9 @@ class Trader:
         # - croissants -coconuts
         price_adj = 0
         threshold = 1.75
-        ORDER_VOLUME = 10
+        ORDER_VOLUME = 20
 
-        if abs(croissants_position) < POSITION_LIMITS[Product.CROISSANTS] - 10:
+        if abs(croissants_position) < POSITION_LIMITS[Product.CROISSANTS] - 20:
             if spread_short < avg_spread - threshold*std_spread:
                 orders_croissants.append(Order(Product.CROISSANTS, int_price_croissants-price_adj, -ORDER_VOLUME))
                 orders_jams.append(Order(Product.JAMS, int_price_jams+price_adj, (int)(ORDER_VOLUME*1.4)))
@@ -2488,32 +2488,32 @@ class Trader:
 
         result = {}
         product1 = Product.RAINFOREST_RESIN
-        try:
-            result[product1] = self.resin_strategy(state)
-        except Exception as e:
-            logger.print("Error in PRODUCT1:", e)
+        # try:
+        #     result[product1] = self.resin_strategy(state)
+        # except Exception as e:
+        #     logger.print("Error in PRODUCT1:", e)
 
+ 
+        # product2 = Product.KELP
 
-        product2 = Product.KELP
+        # try:
+        #     result[product2] = self.market_make_kelp(state)
+        # except Exception as e:
+        #     logger.print("Error in PRODUCT1:", e)
 
-        try:
-            result[product2] = self.market_make_kelp(state)
-        except Exception as e:
-            logger.print("Error in PRODUCT1:", e)
+        # product3 = Product.SQUID_INK
 
-        product3 = Product.SQUID_INK
+        # try:
+        #     result[product3] = self.squid_s(state,product3)
+        # except Exception as e:
+        #     logger.print("Error in PRODUCT1:", e)
 
-        try:
-            result[product3] = self.squid_s(state,product3)
-        except Exception as e:
-            logger.print("Error in PRODUCT1:", e)
+        # product5 = Product.DJEMBES
 
-        product5 = Product.DJEMBES
-
-        try:
-            result[product5] = self.kelp_similar(state,product5)
-        except Exception as e:
-            logger.print("Error in PRODUCT1:", e)
+        # try:
+        #     result[product5] = self.kelp_similar(state,product5)
+        # except Exception as e:
+        #     logger.print("Error in PRODUCT1:", e)
 
 
         product4 = Product.JAMS
@@ -2559,11 +2559,11 @@ class Trader:
             result[Product.BASKET2] = spread_orders_2[Product.BASKET2]
 
 
-        try:
-            volcano_result = self.volcano_strategy(state)
-            result.update(volcano_result)
-        except Exception as e:
-            logger.print("Error in volcano strategy:", e)
+        # try:
+        #     volcano_result = self.volcano_strategy(state)
+        #     result.update(volcano_result)
+        # except Exception as e:
+        #     logger.print("Error in volcano strategy:", e)
 
 
        
@@ -2579,21 +2579,21 @@ class Trader:
         # Initialize result
         conversions = 0
 
-        # --- Execute Strategy for MAGNIFICENT_MACARONS ---
-        product = Product.MAGNIFICENT_MACARONS
-        if product in state.listings: # Check if product is traded in this round/day
-            try:
-                # Call the specific strategy function for the product
-                orders, t_conversions = self.MAGNIFICENT_MACARONS_strategy(state)
-                result[product] = orders
-                conversions += t_conversions # Accumulate conversions
+        # # --- Execute Strategy for MAGNIFICENT_MACARONS ---
+        # product = Product.MAGNIFICENT_MACARONS
+        # if product in state.listings: # Check if product is traded in this round/day
+        #     try:
+        #         # Call the specific strategy function for the product
+        #         orders, t_conversions = self.MAGNIFICENT_MACARONS_strategy(state)
+        #         result[product] = orders
+        #         conversions += t_conversions # Accumulate conversions
 
-            except Exception as e:
-                logger.print(f"Error occurred in {product} strategy: {e}")
-                result[product] = [] # Return empty list on error to avoid crash
+        #     except Exception as e:
+        #         logger.print(f"Error occurred in {product} strategy: {e}")
+        #         result[product] = [] # Return empty list on error to avoid crash
 
-        else:
-             logger.print(f"{product} not in listings for this round.")
+        # else:
+        #      logger.print(f"{product} not in listings for this round.")
 
 
         traderData = jsonpickle.encode(self.traderObject, unpicklable=False)
